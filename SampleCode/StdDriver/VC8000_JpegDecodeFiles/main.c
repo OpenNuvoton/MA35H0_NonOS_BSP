@@ -252,7 +252,7 @@ int do_jpeg_decode(char *fname, uint32_t fsize)
 	ret = VC8000_JPEG_Decode_Run(handle, nc_ptr(_FileBuff), fsize, NULL);
 	if (ret != 0)
 	{
-		sysprintf("VC8000_H264_Decode_Run error: %d\n", ret);
+		sysprintf("VC8000_JPEG_Decode_Run error: %d\n", ret);
 		goto err_out;
 	}
 	VC8000_JPEG_Close_Instance(handle);
@@ -369,7 +369,7 @@ int32_t main(void)
 
 	sysprintf("\n\n");
 	sysprintf("+--------------------------------------------+\n");
-	sysprintf("|  MA35H0 VC8000 decode H264 bit stream      |\n");
+	sysprintf("|  MA35H0 VC8000 decode JPEG files           |\n");
 	sysprintf("+--------------------------------------------+\n");
 
 	ret = VC8000_Init(ptr_to_u32(_VC8000Buff), sizeof(_VC8000Buff));
