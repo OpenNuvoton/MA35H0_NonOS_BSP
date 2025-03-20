@@ -57,17 +57,17 @@
 		<link>
 			<name>Modbus_Master_LIB/modbus_master.c</name>
 			<type>1</type>
-			<location>C:/hcrdgit4/NUA3500/ma35d0/non-os/SampleCode/StdDriver/ModBus/Modbus_Master_LIB/modbus_master.c</location>
+			<locationURI>PARENT-1-PROJECT_LOC/Modbus_Master_LIB/modbus_master.c</locationURI>
 		</link>
 		<link>
 			<name>Modbus_Master_LIB/ringbuffer.c</name>
 			<type>1</type>
-			<location>C:/hcrdgit4/NUA3500/ma35d0/non-os/SampleCode/StdDriver/ModBus/Modbus_Master_LIB/ringbuffer.c</location>
+			<locationURI>PARENT-1-PROJECT_LOC/Modbus_Master_LIB/ringbuffer.c</locationURI>
 		</link>
 		<link>
 			<name>Modbus_Master_LIB/trans_recieve_buff_control.c</name>
 			<type>1</type>
-			<location>C:/hcrdgit4/NUA3500/ma35d0/non-os/SampleCode/StdDriver/ModBus/Modbus_Master_LIB/trans_recieve_buff_control.c</location>
+			<locationURI>PARENT-1-PROJECT_LOC/Modbus_Master_LIB/trans_recieve_buff_control.c</locationURI>
 		</link>
 		<link>
 			<name>User/main.c</name>
