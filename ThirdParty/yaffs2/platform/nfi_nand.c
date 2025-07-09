@@ -415,7 +415,7 @@ void nuvoton_correctdata_BCH(u8 ucFieidIndex, u8 ucErrorCnt, u8* pDAddr)
 int nuvoton_CorrectData(struct mtd_info *mtd, unsigned long uDAddr)
 {
     int uStatus, ii, jj, i32FieldNum=0;
-    volatile int uErrorCnt = 0;
+    volatile int uErrorCnt = 0, maxbitflips = 0;
 
     if (NFI->NANDINTSTS & 0x4)
     {
@@ -446,21 +446,24 @@ int nuvoton_CorrectData(struct mtd_info *mtd, unsigned long uDAddr)
 
                     uErrorCnt = (uStatus >> 2) & 0x1F;
                     nuvoton_correctdata_BCH(jj*4+ii, uErrorCnt, (u8 *)uDAddr);
-
+                    maxbitflips = max_t(u32, maxbitflips, uErrorCnt);
+                    mtd->ecc_stats.corrected += uErrorCnt;
                 } else { // uncorrectable error or ECC error
-                    return -1;
+                	mtd->ecc_stats.failed++;
+                	return -EBADMSG;
                 }
                 uStatus >>= 8;
             }
         }
     }
-    return uErrorCnt;
+    return maxbitflips;
 }
 
 
 static inline int nuvoton_nand_dma_transfer(struct mtd_info *mtd, const u_char *addr, unsigned int len, int is_write)
 {
     struct nuvoton_nand_info *nand = nuvoton_nand;
+    int cnt = 0;
 
     // For save, wait DMAC to ready
     while (NFI->DMACTL & 0x200);
@@ -499,16 +502,14 @@ static inline int nuvoton_nand_dma_transfer(struct mtd_info *mtd, const u_char *
             do {
                 int stat=0;
 
-                stat = nuvoton_CorrectData(mtd, (unsigned long)addr);
-                if (stat < 0) {
-                    mtd->ecc_stats.failed++;
+                cnt = nuvoton_CorrectData(mtd, (unsigned long)addr);
+                if (cnt < 0) {
                     NFI->NANDINTSTS = 0x4;
                     NFI->DMACTL = 0x3;          // reset DMAC
                     NFI->NANDCTL |= 0x1;
                     break;
                 }
-                else if (stat > 0) {
-                    //mtd->ecc_stats.corrected += stat; //Occurred: MLC UBIFS mount error
+                else {
                 	NFI->NANDINTSTS = 0x4;
                 }
 
@@ -521,7 +522,7 @@ static inline int nuvoton_nand_dma_transfer(struct mtd_info *mtd, const u_char *
     // Clear DMA finished flag
     NFI->NANDINTSTS |= 0x1;
 
-    return 0;
+    return cnt;
 }
 
 /**
@@ -604,6 +605,7 @@ static int nuvoton_nand_read_page_hwecc_oob_first(struct mtd_info *mtd, struct n
 {
     uint8_t *p = buf;
     char * ptr= (char *)(NAND_BASE+0xA00);
+    int bitflips = 0;
 
     /* At first, read the OOB area  */
     nuvoton_nand_command(mtd, NAND_CMD_READOOB, 0, page);
@@ -617,13 +619,13 @@ static int nuvoton_nand_read_page_hwecc_oob_first(struct mtd_info *mtd, struct n
 	else {
 		// Third, read data from nand
 		nuvoton_nand_command(mtd, NAND_CMD_READ0, 0, page);
-		nuvoton_nand_dma_transfer(mtd, p, mtd->writesize, 0x0);
+		bitflips = nuvoton_nand_dma_transfer(mtd, p, mtd->writesize, 0x0);
 
 		// Fourth, restore OOB data from SMRA
 		memcpy((void *)chip->oob_poi, (void *)ptr, mtd->oobsize);
 	}
 
-    return 0;
+    return bitflips;
 }
 
 /**
@@ -644,8 +646,18 @@ static int nuvoton_nand_read_oob_hwecc(struct mtd_info *mtd, struct nand_chip *c
     // Second, copy OOB data to SMRA for page read
     memcpy((void*)ptr, (void*)chip->oob_poi, mtd->oobsize);
 
-	if ((*(ptr+2) != 0) && (*(ptr+3) != 0))
-		memset((void *)chip->oob_poi, 0xff, mtd->oobsize);
+	//if ((*(ptr+2) != 0) && (*(ptr+3) != 0))
+	//	memset((void *)chip->oob_poi, 0xff, mtd->oobsize);
+
+	return 0;
+}
+
+static int nuvoton_nand_write_oob(struct mtd_info *mtd, struct nand_chip *chip, int page)
+{
+	nuvoton_nand_command(mtd, NAND_CMD_SEQIN, mtd->writesize, page);
+    nuvoton_nand_write_buf(mtd, chip->oob_poi, mtd->oobsize);
+	nuvoton_nand_command(mtd, NAND_CMD_PAGEPROG, -1, -1);
+	nuvoton_waitfunc(mtd, chip);
 
 	return 0;
 }
@@ -681,6 +693,7 @@ int board_nand_init(struct nand_chip *nand)
 
     nand->controller = &nuvoton_nand->controller;
 
+    nand->ecc.options    |= NAND_ECC_CUSTOM_PAGE_ACCESS;
     nand->ecc.mode       = NAND_ECC_HW_OOB_FIRST;
     nand->ecc.hwctl      = nuvoton_nand_enable_hwecc;
     nand->ecc.calculate  = nuvoton_nand_calculate_ecc;
@@ -688,6 +701,7 @@ int board_nand_init(struct nand_chip *nand)
     nand->ecc.write_page = nuvoton_nand_write_page_hwecc;
     nand->ecc.read_page  = nuvoton_nand_read_page_hwecc_oob_first;
     nand->ecc.read_oob   = nuvoton_nand_read_oob_hwecc;
+    nand->ecc.write_oob  = nuvoton_nand_write_oob;
     nand->ecc.layout     = &nuvoton_nand_oob;
 	nand->ecc.write_page_raw = nuvoton_nand_write_page_raw;
 	nand->ecc.read_page_raw  = nuvoton_nand_read_page_raw;
