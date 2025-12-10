@@ -32,10 +32,12 @@ void SYS_Init(void)
     CLK_EnableModuleClock(ADC_MODULE);
     CLK_EnableModuleClock(GPB_MODULE);
     CLK_EnableModuleClock(UART0_MODULE);
+    CLK_EnableModuleClock(TMR0_MODULE);
 
     /* Select IP clock source */
-    CLK_SetModuleClock(ADC_MODULE, 0, CLK_CLKDIV4_ADC(20));  // Set ADC clock rate to 9MHz
+    CLK_SetModuleClock(ADC_MODULE, 0, CLK_CLKDIV4_ADC(900));  // Set ADC clock rate to 200kHz
     CLK_SetModuleClock(UART0_MODULE, CLK_CLKSEL2_UART0SEL_HXT, CLK_CLKDIV1_UART0(1));
+    CLK_SetModuleClock(TMR0_MODULE, CLK_CLKSEL1_TMR0SEL_HXT, 0);
 
     /* Set PB.12 to input mode */
     PB->MODE &= ~GPIO_MODE_MODE12_Msk;
@@ -83,7 +85,6 @@ int32_t main (void)
     // Power on ADC
     ADC_POWER_ON(ADC0);
 
-
     // Enable ADC convert complete interrupt
     ADC_EnableInt(ADC0, ADC_IER_MIEN_Msk);
     IRQ_SetHandler((IRQn_ID_t)ADC0_IRQn, ADC0_IRQHandler);
@@ -94,6 +95,8 @@ int32_t main (void)
         // Trigger ADC conversion if it is idle
         if(!u32Busy)
         {
+            /* Delay 10 us for ADC conversion */
+            TIMER_Delay(TIMER0, 10);
             u32Busy = 1;
             ADC_START_CONV(ADC0);
         }
