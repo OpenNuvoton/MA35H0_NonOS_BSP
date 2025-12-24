@@ -42,6 +42,7 @@ static void EMAC_powerup_mac(EMACdevice *emacdev);
 static void EMAC_powerdown_mac(EMACdevice *emacdev);
 uint32_t EMAC_int_handler0(struct sk_buff *prskb);
 uint32_t EMAC_int_handler1(struct sk_buff *prskb);
+extern void notify_rx_task(int intf);
 
 extern EMACdevice EMACdev[];
 extern u8 mac_addr0[];

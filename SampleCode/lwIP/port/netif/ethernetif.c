@@ -66,6 +66,10 @@
 struct netif *_netif0;
 struct netif *_netif1;
 
+/* Fired by EMAC Rx interrupt. This is greedy so just keep medium priority */
+#define EMAC_LWIP_RX_PRIORITY   (tskIDLE_PRIORITY + 1)
+#define EMAC_LWIP_RX_STACKSIZE  (1024)
+
 #define NUM_OF_RXSKB 32
 struct sk_buff rxskbuf[NUM_OF_RXSKB]; // application buffer queue
 
@@ -74,6 +78,7 @@ extern u8_t mac_addr1[6];
 extern struct sk_buff txbuf[EMAC_CNT];
 extern struct sk_buff rxbuf[EMAC_CNT];
 
+static TaskHandle_t post_rx_task = NULL;
 
 /**
  * Helper struct to hold private data used to operate your ethernet interface.
@@ -87,36 +92,60 @@ struct ethernetif
     /* Add whatever per-interface state that is needed here. */
 };
 
-uint32_t EMAC0_ReceivePkt(struct sk_buff *prskb)
+void notify_rx_task(int intf)
 {
-    return EMAC_int_handler0(prskb);
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    if(xTaskGetSchedulerState() != taskSCHEDULER_RUNNING)
+        return;
+
+    vTaskNotifyGiveFromISR(post_rx_task, &xHigherPriorityTaskWoken);
+    /* Force context switch immediately (risky for scheduler) */
+    // portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
 void EMAC0_IRQHandler(void)
 {
     struct sk_buff *rskb = &rxskbuf[0];
-    uint32_t packetCnt;
 
-    packetCnt = EMAC0_ReceivePkt(rskb);
-    if(packetCnt != 0)
-    {
-        ethernetif_input0(packetCnt);
-    }
+    EMAC_int_handler0(rskb);
 }
 
-uint32_t EMAC1_ReceivePkt(struct sk_buff *prskb)
+void emac0_lwip_rx(void *arg)
 {
-    return EMAC_int_handler1(prskb);
+    struct sk_buff *rskb = &rxskbuf[0];
+    uint32_t packetCnt;
+
+    for (;;)
+    {
+        /* Block until IRQ notifies */
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+        packetCnt = EMAC_handle_received_data(EMACINTF0, rskb);
+
+        ethernetif_input0(packetCnt);
+    }
 }
 
 void EMAC1_IRQHandler(void)
 {
     struct sk_buff *rskb = &rxskbuf[0];
+
+    EMAC_int_handler1(rskb);
+}
+
+void emac1_lwip_rx(void *arg)
+{
+    struct sk_buff *rskb = &rxskbuf[0];
     uint32_t packetCnt;
 
-    packetCnt = EMAC1_ReceivePkt(rskb);
-    if(packetCnt != 0)
+    for (;;)
     {
+        /* Block until IRQ notifies */
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+        packetCnt = EMAC_handle_received_data(EMACINTF1, rskb);
+
         ethernetif_input1(packetCnt);
     }
 }
@@ -147,9 +176,10 @@ low_level_init0(struct netif *netif)
 #endif
 
     EMAC_open(EMACINTF0, EMAC_MODE);
+    /* we will call interrupt safe API, the priority must be at or below configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY */
     IRQ_SetPriority((IRQn_ID_t)EMAC0_IRQn, (configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY + 1) << portPRIORITY_SHIFT);
     IRQ_SetHandler(EMAC0_IRQn, EMAC0_IRQHandler);
-    IRQ_SetTarget(EMAC0_IRQn, IRQ_CPU_0);
+    IRQ_SetTarget(EMAC0_IRQn, 0x1 << cpuid());
     IRQ_Enable(EMAC0_IRQn);
 }
 
@@ -179,9 +209,10 @@ low_level_init1(struct netif *netif)
 #endif
 
     EMAC_open(EMACINTF1, EMAC_MODE);
+    /* we will call interrupt safe API, the priority must be at or below configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY */
     IRQ_SetPriority((IRQn_ID_t)EMAC1_IRQn, (configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY + 1) << portPRIORITY_SHIFT);
     IRQ_SetHandler(EMAC1_IRQn, EMAC1_IRQHandler);
-    IRQ_SetTarget(EMAC1_IRQn, IRQ_CPU_0);
+    IRQ_SetTarget(EMAC1_IRQn, 0x1 << cpuid());
     IRQ_Enable(EMAC1_IRQn);
 }
 
@@ -535,6 +566,13 @@ ethernetif_init0(struct netif *netif)
     /* initialize the hardware */
     low_level_init0(netif);
 
+    xTaskCreate(emac0_lwip_rx,
+            "emac0-lwip-rx",
+            EMAC_LWIP_RX_STACKSIZE,
+            NULL,
+            EMAC_LWIP_RX_PRIORITY,
+            &post_rx_task);
+
     return ERR_OK;
 }
 
@@ -591,6 +629,13 @@ ethernetif_init1(struct netif *netif)
 
     /* initialize the hardware */
     low_level_init1(netif);
+
+    xTaskCreate(emac1_lwip_rx,
+            "emac1-lwip-rx",
+            EMAC_LWIP_RX_STACKSIZE,
+            NULL,
+            EMAC_LWIP_RX_PRIORITY,
+            &post_rx_task);
 
     return ERR_OK;
 }

@@ -733,7 +733,7 @@ uint32_t EMAC_int_handler0(struct sk_buff *prskb)
 
     if(interrupt & EMACDmaRxNormal) {
         TR("%s:: Rx Normal \n", __FUNCTION__);
-		ret = EMAC_handle_received_data(EMACINTF0, prskb);
+        notify_rx_task(EMACINTF0);
     }
 
     if(interrupt & EMACDmaRxAbnormal) {
@@ -874,7 +874,7 @@ uint32_t EMAC_int_handler1(struct sk_buff *prskb)
 
     if(interrupt & EMACDmaRxNormal) {
         TR("%s:: Rx Normal \n", __FUNCTION__);
-        ret = EMAC_handle_received_data(EMACINTF1, prskb);
+        notify_rx_task(EMACINTF1);
     }
 
     if(interrupt & EMACDmaRxAbnormal) {
