@@ -43,15 +43,6 @@ void CANFD00_IRQHandler(void)
     }
 }
 
-void *_MemSet(void *s, int c, size_t count)
-{
-    unsigned char *p = s;
-
-    while (count--)
-        if ((unsigned char)c == *p++)
-    return (void *)(p - 1);
-}
-
 void SYS_Init(void)
 {
     /*---------------------------------------------------------------------------------------------------------*/
@@ -126,7 +117,7 @@ void CAN_TxRx_Test(CANFD_FD_MSG_T *psTxMsg, E_CANFD_ID_TYPE eFrameIdType, uint32
     }
 
     sysprintf("\n\n");
-    _MemSet(&g_sRxMsgFrame, 0, sizeof(g_sRxMsgFrame));
+    memset(&g_sRxMsgFrame, 0, sizeof(g_sRxMsgFrame));
 }
 
 /*---------------------------------------------------------------------------------------------------------*/
