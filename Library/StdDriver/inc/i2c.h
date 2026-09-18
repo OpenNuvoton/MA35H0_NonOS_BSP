@@ -48,7 +48,7 @@ extern "C"
 /*---------------------------------------------------------------------------------------------------------*/
 /* I2C Define Error Code                                                                                   */
 /*---------------------------------------------------------------------------------------------------------*/
-#define I2C_TIMEOUT     SystemCoreClock  /*!< I2C time-out counter (1 second time-out)                                    \hideinitializer */
+#define I2C_TIMEOUT     (12000000UL)     /*!< I2C time-out counter (1 second time-out, ARM Generic Timer @ 12MHz)          \hideinitializer */
 #define I2C_ERR_TIMEOUT (-2L)            /*!< I2C operation abort due to timeout error                                    \hideinitializer */
 
 /*! @}*/ /* end of group I2C_EXPORTED_CONSTANTS */
@@ -285,5 +285,4 @@ uint32_t I2C_ReadMultiBytesTwoRegs(I2C_T *i2c, uint8_t u8SlaveAddr, uint16_t u16
 #endif
 
 #endif
-
 
