@@ -9,6 +9,11 @@
 #include <string.h>
 #include <stdio.h>
 
+#define EMAC_MDIO_TIMEOUT       12000ULL     /* 1 ms, ARM Generic Timer @ 12 MHz */
+#define EMAC_TIMESTAMP_TIMEOUT  12000ULL     /* 1 ms, ARM Generic Timer @ 12 MHz */
+#define EMAC_PHY_RESET_TIMEOUT  12000000ULL  /* 1 second, ARM Generic Timer @ 12 MHz */
+#define EMAC_AUTONEG_TIMEOUT    120000000ULL /* 10 seconds, ARM Generic Timer @ 12 MHz */
+
 /** @addtogroup Standard_Driver Standard Driver
   @{
 */
@@ -88,25 +93,24 @@ u32 EMAC_get_mdc_clk_div(EMACdevice *emacdev)
  */
 s32 EMAC_read_phy_reg(EMACdevice *emacdev, u32 PhyOffset, u16 *data)
 {
-    u32 addr, i;
+    u32 addr;
+    uint64_t u64TimeOut;
 
     addr = ((emacdev->PhyBase << EMAC_GmiiAddr_PA_Pos) & EMAC_GmiiAddr_PA_Msk) | ((PhyOffset << EMAC_GmiiAddr_GR_Pos) & EMAC_GmiiAddr_GR_Msk);
     addr |= EMAC_GmiiAddr_GB_Msk | GmiiCsrClk4; // Gmii busy bit
     EMAC_WRITE((u64)&emacdev->MacBase->GmiiAddr, addr);
 
-    for(i = 0; i < DEFAULT_LOOP_VARIABLE; i++) { //Wait till the busy bit gets cleared with in a certain amount of time
+    u64TimeOut = EL0_GetCurrentPhysicalValue() + EMAC_MDIO_TIMEOUT;
+    while (EL0_GetCurrentPhysicalValue() < u64TimeOut) { //Wait till the busy bit gets cleared with in a certain amount of time
         if(!(EMAC_READ((u64)&emacdev->MacBase->GmiiAddr) & EMAC_GmiiAddr_GB_Msk)) {
-            break;
+            *data = (u16)(EMAC_READ((u64)&emacdev->MacBase->GmiiData) & 0xFFFF);
+            return 0;
         }
         plat_delay(DEFAULT_DELAY_VARIABLE);
     }
-    if(i < DEFAULT_LOOP_VARIABLE)
-        *data = (u16)(EMAC_READ((u64)&emacdev->MacBase->GmiiData) & 0xFFFF);
-    else {
-        TR("Error::: PHY not responding Busy bit didnot get cleared !!!!!!\n");
-        return -EMACPHYERR;
-    }
-    return 0;
+
+    TR("Error::: PHY not responding Busy bit didnot get cleared !!!!!!\n");
+    return -EMACPHYERR;
 }
 
 /**
@@ -119,7 +123,8 @@ s32 EMAC_read_phy_reg(EMACdevice *emacdev, u32 PhyOffset, u16 *data)
  */
 s32 EMAC_write_phy_reg(EMACdevice *emacdev, u32 PhyOffset, u16 data)
 {
-    u32 addr, i;
+    u32 addr;
+    uint64_t u64TimeOut;
 
     EMAC_WRITE((u64)&emacdev->MacBase->GmiiData, data);
 
@@ -129,19 +134,16 @@ s32 EMAC_write_phy_reg(EMACdevice *emacdev, u32 PhyOffset, u16 data)
     addr |= EMAC_GmiiAddr_GB_Msk | GmiiCsrClk4; // set Gmii clk to 150-250 Mhz and Gmii busy bit
 
     EMAC_WRITE((u64)&emacdev->MacBase->GmiiAddr, addr);
-    for(i = 0; i < DEFAULT_LOOP_VARIABLE; i++) {
+    u64TimeOut = EL0_GetCurrentPhysicalValue() + EMAC_MDIO_TIMEOUT;
+    while (EL0_GetCurrentPhysicalValue() < u64TimeOut) {
         if(!(EMAC_READ((u64)&emacdev->MacBase->GmiiAddr) & EMAC_GmiiAddr_GB_Msk)) {
-            break;
+           return 0;
         }
         plat_delay(DEFAULT_DELAY_VARIABLE);
     }
 
-    if(i < DEFAULT_LOOP_VARIABLE) {
-        return 0;
-    } else {
-        TR("Error::: PHY not responding Busy bit didnot get cleared !!!!!!\n");
-        return -EMACPHYERR;
-    }
+    TR("Error::: PHY not responding Busy bit didnot get cleared !!!!!!\n");
+    return -EMACPHYERR;
 }
 
 /**
@@ -176,14 +178,15 @@ s32 EMAC_phy_loopback(EMACdevice *emacdev, bool loopback)
 s32 EMAC_perform_phy_reset(EMACdevice *emacdev, int mode)
 {
     s32 ret = 0;
-    s32 i = DEFAULT_LOOP_VARIABLE;
     u16 data;
+    uint64_t u64TimeOut;
 
     ret = EMAC_write_phy_reg(emacdev, PHY_CONTROL_REG, Mii_reset);
     if(ret)
         return ret;
 
-    while(i-- > 0) {
+    u64TimeOut = EL0_GetCurrentPhysicalValue() + EMAC_PHY_RESET_TIMEOUT;
+    while(EL0_GetCurrentPhysicalValue() < u64TimeOut) {
         ret = EMAC_read_phy_reg(emacdev, PHY_CONTROL_REG, &data);
         if(ret)
             return ret;
@@ -220,8 +223,8 @@ s32 EMAC_perform_phy_reset(EMACdevice *emacdev, int mode)
     if(ret)
         return ret;
 
-    i = 10000000;
-    while(i-- > 0) {
+    u64TimeOut = EL0_GetCurrentPhysicalValue() + EMAC_AUTONEG_TIMEOUT;
+    while(EL0_GetCurrentPhysicalValue() < u64TimeOut) {
         /* first, a dummy read, needed to latch some MII phys */
         //EMAC_read_phy_reg(emacdev, PHY_STATUS_REG, &data);
         ret = EMAC_read_phy_reg(emacdev, PHY_STATUS_REG, &data);
@@ -1443,21 +1446,19 @@ void EMAC_TS_set_clk_type(EMACdevice *emacdev, u32 clk_type)
  */
 s32 EMAC_TS_addend_update(EMACdevice *emacdev, u32 addend_value)
 {
-    u32 i;
+    uint64_t u64TimeOut;
     EMAC_WRITE((u64)&emacdev->MacBase->TSAddend, addend_value);
-    for(i = 0; i < DEFAULT_LOOP_VARIABLE; i++) { //Wait till the busy bit gets cleared with in a certain amount of time
+    u64TimeOut = EL0_GetCurrentPhysicalValue() + EMAC_TIMESTAMP_TIMEOUT;
+    while (EL0_GetCurrentPhysicalValue() < u64TimeOut) { //Wait till the busy bit gets cleared with in a certain amount of time
         if(!(EMAC_READ((u64)&emacdev->MacBase->TSControl) & EMAC_TSControl_TSADDREG_Msk)) { // if it is cleared then break
-            break;
+            EMAC_SETBITS((u64)&emacdev->MacBase->TSControl, EMAC_TSControl_TSADDREG_Msk);
+            return 0;
         }
         plat_delay(DEFAULT_DELAY_VARIABLE);
     }
-    if(i < DEFAULT_LOOP_VARIABLE)
-        EMAC_SETBITS((u64)&emacdev->MacBase->TSControl, EMAC_TSControl_TSADDREG_Msk);
-    else {
-        TR("Error::: The TSADDREG bit is not getting cleared !!!!!!\n");
-        return -EMACPHYERR;
-    }
-    return 0;
+
+    TR("Error::: The TSADDREG bit is not getting cleared !!!!!!\n");
+    return -EMACPHYERR;
 }
 
 /**
@@ -1471,22 +1472,20 @@ s32 EMAC_TS_addend_update(EMACdevice *emacdev, u32 addend_value)
  */
 s32 EMAC_TS_timestamp_update(EMACdevice *emacdev, u32 sec, u32 nanosec)
 {
-    u32 i;
+    uint64_t u64TimeOut;
     EMAC_WRITE((u64)&emacdev->MacBase->TSSecUpdate, sec);
     EMAC_WRITE((u64)&emacdev->MacBase->TSNanosecUpdate, nanosec);
-    for(i = 0; i < DEFAULT_LOOP_VARIABLE; i++) { //Wait till the busy bit gets cleared with in a certain amount of time
+    u64TimeOut = EL0_GetCurrentPhysicalValue() + EMAC_TIMESTAMP_TIMEOUT;
+    while (EL0_GetCurrentPhysicalValue() < u64TimeOut) { //Wait till the busy bit gets cleared with in a certain amount of time
         if(!(EMAC_READ((u64)&emacdev->MacBase->TSControl) & EMAC_TSControl_TSUPDT_Msk)) { // if it is cleared then break
-            break;
+            EMAC_SETBITS((u64)&emacdev->MacBase->TSControl, EMAC_TSControl_TSUPDT_Msk);
+            return 0;
         }
         plat_delay(DEFAULT_DELAY_VARIABLE);
     }
-    if(i < DEFAULT_LOOP_VARIABLE)
-        EMAC_SETBITS((u64)&emacdev->MacBase->TSControl, EMAC_TSControl_TSUPDT_Msk);
-    else {
-        TR("Error::: The TSADDREG bit is not getting cleared !!!!!!\n");
-        return -EMACPHYERR;
-    }
-    return 0;
+
+    TR("Error::: The TSADDREG bit is not getting cleared !!!!!!\n");
+    return -EMACPHYERR;
 }
 
 /**
@@ -1500,22 +1499,20 @@ s32 EMAC_TS_timestamp_update(EMACdevice *emacdev, u32 sec, u32 nanosec)
  */
 s32 EMAC_TS_timestamp_init(EMACdevice *emacdev, u32 sec, u32 nanosec)
 {
-    u32 i;
+    uint64_t u64TimeOut;
     EMAC_WRITE((u64)&emacdev->MacBase->TSSecUpdate, sec);
     EMAC_WRITE((u64)&emacdev->MacBase->TSNanosecUpdate, nanosec);
-    for(i = 0; i < DEFAULT_LOOP_VARIABLE; i++) { //Wait till the busy bit gets cleared with in a certain amount of time
+    u64TimeOut = EL0_GetCurrentPhysicalValue() + EMAC_TIMESTAMP_TIMEOUT;
+    while (EL0_GetCurrentPhysicalValue() < u64TimeOut) { //Wait till the busy bit gets cleared with in a certain amount of time
         if(!(EMAC_READ((u64)&emacdev->MacBase->TSControl) & EMAC_TSControl_TSINIT_Msk)) { // if it is cleared then break
-            break;
+            EMAC_SETBITS((u64)&emacdev->MacBase->TSControl, EMAC_TSControl_TSINIT_Msk);
+            return 0;
         }
         plat_delay(DEFAULT_DELAY_VARIABLE);
     }
-    if(i < DEFAULT_LOOP_VARIABLE)
-        EMAC_SETBITS((u64)&emacdev->MacBase->TSControl, EMAC_TSControl_TSINIT_Msk);
-    else {
-        TR("Error::: The TSADDREG bit is not getting cleared !!!!!!\n");
-        return -EMACPHYERR;
-    }
-    return 0;
+
+    TR("Error::: The TSADDREG bit is not getting cleared !!!!!!\n");
+    return -EMACPHYERR;
 }
 
 /**

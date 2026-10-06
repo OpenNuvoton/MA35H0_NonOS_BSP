@@ -9,12 +9,13 @@
 #include "MA35H0.h"
 #include "otp.h"
 
+#define OTP_BUSY_TIMEOUT 12000000ULL  /* 1 second timeout, ARM Generic Timer @ 12 MHz */
 
 static int  otp_check_busy()
 {
-	volatile int  wait = 0x10000000;
+	uint64_t u64TimeOut = EL0_GetCurrentPhysicalValue() + OTP_BUSY_TIMEOUT;
 	
-	while (--wait > 0) {
+	while (EL0_GetCurrentPhysicalValue() < u64TimeOut) {
 		if ((OTP->OTP_STS & OTP_STS_BUSY_Msk) == 0)
 			return 0;
 	}
